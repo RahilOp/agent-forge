@@ -1,0 +1,32 @@
+version: '3.8'
+services:
+  server:
+    container_name: chatagent_server
+    build: ./server
+    env_file: ./server/.env
+    ports:
+      - "${SERVER_PORT:-7778}:7778"
+    command: uvicorn main:app --host 0.0.0.0 --port 7778 --reload
+    restart: always
+    volumes:
+      - ./server:/app
+    networks:
+      - chatagent_network
+
+  client:
+    container_name: chatagent_client
+    build: ./client
+    env_file: ./client/.env
+    ports:
+      - "${CLIENT_PORT:-5173}:5173"
+    command: npm run dev
+    restart: always
+    volumes:
+      - ./client:/app
+      - /app/node_modules
+    networks:
+      - chatagent_network
+
+networks:
+  chatagent_network:
+    driver: bridge
