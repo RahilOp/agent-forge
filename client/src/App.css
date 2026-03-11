@@ -1,0 +1,11 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Prevents extra scrolling */
+  overscroll-behavior: none; /* Stops the "rubber band" effect on mobile */
+  background-color: #f5f5f5; /* Change to match your UI background */
+}
+
+
+

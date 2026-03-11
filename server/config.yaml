@@ -1,0 +1,17 @@
+agents:
+
+  general_assistant:
+    name: "General Assistant"
+    prompt_template: "templates/general_prompt.txt"
+    tools:
+      - "web_search"
+      - "wikipedia_search"
+      - "calculator"
+      - "datetime_tool"
+
+  research_assistant:
+    name: "Research Assistant"
+    prompt_template: "templates/research_prompt.txt"
+    tools:
+      - "web_search"
+      - "wikipedia_search"

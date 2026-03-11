@@ -1,0 +1,53 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Environment files (contain secrets)
+.env
+server/.env
+client/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+*.egg-info/
+chat_server/
+
+# Database
+*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+
+# Notebooks (development only)
+*.ipynb
+
+# Logs
+*.log
+*.log.*
+
+# Certs
+certs/
+
+# Test files
+htmlcov/
+.coverage*
+coverage.xml
+.pytest_cache/
+
+# Misc
+*.lock
+!package-lock.json
