@@ -1,32 +1,49 @@
-version: '3.8'
 services:
   server:
-    container_name: chatagent_server
-    build: ./server
+    container_name: agent_forge_server
+    build:
+      context: ./server
+      args:
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     env_file: ./server/.env
+    environment:
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - NO_PROXY=.otsuka-shokai.co.jp,otsuka-shokai.co.jp,agent_forge_client
     ports:
-      - "${SERVER_PORT:-7778}:7778"
-    command: uvicorn main:app --host 0.0.0.0 --port 7778 --reload
+      - "${SERVER_PORT:-9473}:8000"
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     restart: always
     volumes:
       - ./server:/app
     networks:
-      - chatagent_network
+      - agent_forge_network
 
   client:
-    container_name: chatagent_client
-    build: ./client
+    container_name: agent_forge_client
+    build:
+      context: ./client
+      args:
+        HTTP_PROXY: ${HTTP_PROXY}
+        HTTPS_PROXY: ${HTTPS_PROXY}
+        NO_PROXY: ${NO_PROXY}
     env_file: ./client/.env
+    environment:
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - NO_PROXY=.otsuka-shokai.co.jp,otsuka-shokai.co.jp,agent_forge_server
     ports:
-      - "${CLIENT_PORT:-5173}:5173"
+      - "${CLIENT_PORT:-9998}:3000"
     command: npm run dev
     restart: always
     volumes:
       - ./client:/app
       - /app/node_modules
     networks:
-      - chatagent_network
+      - agent_forge_network
 
 networks:
-  chatagent_network:
+  agent_forge_network:
     driver: bridge

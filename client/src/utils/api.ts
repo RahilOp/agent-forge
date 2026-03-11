@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:7778";
+const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 
 export const fetchAgents = async (): Promise<string[]> => {
   const response = await fetch(`${API_BASE}/available_agents`);

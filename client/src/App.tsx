@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import ChatBubble from "./components/ChatBubble";
-import ReactMarkdown from "react-markdown";
+import ChatBubble, { TypingIndicator } from "./components/ChatBubble";
 import Navbar from "./components/Navbar";
 import "./App.css";
 import {
@@ -26,19 +25,14 @@ type ChatSession = {
 const App: React.FC = () => {
   const [messages, setMessages] = useState<
     Array<{ sender: "ai" | "human"; text: string; documents?: any[] }>
-  >([
-    {
-      sender: "ai",
-      text: "Hi! I'm your AI assistant with tool-calling capabilities. I can search the web, look up Wikipedia, do calculations, and more. How can I help?",
-    },
-  ]);
+  >([]);
   const [input, setInput] = useState("");
   const [userQuery, setUserQuery] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const [agents, setAgents] = useState<string[]>([]);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const [activeSession, setActiveSession] = useState<ChatSession | null>(null);
   const [userId, setUserId] = useState("");
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState("general_assistant");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
@@ -50,7 +44,6 @@ const App: React.FC = () => {
 
   const chatContainerRef = useRef<HTMLDivElement>(null);
 
-  // Fetch preferences when panel opens
   useEffect(() => {
     if (isPreferencesOpen && userId) {
       fetchPreferences(userId)
@@ -85,9 +78,7 @@ const App: React.FC = () => {
   };
 
   const handleLogin = () => {
-    if (userId.trim()) {
-      setIsLoggedIn(true);
-    }
+    if (userId.trim()) setIsLoggedIn(true);
   };
 
   const handleLogout = () => {
@@ -95,17 +86,11 @@ const App: React.FC = () => {
     setUserId("");
     setChatSessions([]);
     setActiveSession(null);
-    setMessages([
-      {
-        sender: "ai",
-        text: "Hi! I'm your AI assistant with tool-calling capabilities. How can I help?",
-      },
-    ]);
+    setMessages([]);
   };
 
   const handleAgentChange = async (agentName: string) => {
     setSelectedAgent(agentName);
-    setIsDropdownOpen(false);
     try {
       await setActiveAgent(agentName);
       await fetchSessions();
@@ -115,7 +100,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Fetch available agents on mount
   useEffect(() => {
     fetchAgents()
       .then((data) => {
@@ -125,7 +109,6 @@ const App: React.FC = () => {
       .catch((err) => console.error("Error fetching agents:", err));
   }, []);
 
-  // On login, set up agent + sessions
   useEffect(() => {
     if (isLoggedIn && userId) {
       setActiveAgent(selectedAgent)
@@ -135,11 +118,11 @@ const App: React.FC = () => {
     }
   }, [isLoggedIn]);
 
-  // Fetch bot response when userQuery changes
   useEffect(() => {
     if (!userQuery || !activeSession) return;
 
     const fetchBotResponse = async () => {
+      setIsLoading(true);
       try {
         const data = await sendMessage(activeSession.session_id, userId, userQuery);
         setMessages((prev) => [
@@ -151,15 +134,16 @@ const App: React.FC = () => {
         console.error("Error fetching bot response:", error);
         setMessages((prev) => [
           ...prev,
-          { sender: "ai", text: "Sorry, there was an issue with the server." },
+          { sender: "ai", text: "Sorry, there was an issue connecting to the server." },
         ]);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     fetchBotResponse();
   }, [userQuery]);
 
-  // Fetch chat history when active session changes
   useEffect(() => {
     if (!activeSession) return;
 
@@ -170,16 +154,12 @@ const App: React.FC = () => {
           text: msg.text,
           documents: msg.documents?.tool_output || [],
         }));
-        if (processed.length === 0) {
-          setMessages([{ sender: "ai", text: "How can I assist you?" }]);
-        } else {
-          setMessages(processed);
-        }
+        setMessages(processed);
         setUserQuery(null);
       })
       .catch((err) => {
         console.error("Error fetching chat history:", err);
-        setMessages([{ sender: "ai", text: "Unable to load chat history." }]);
+        setMessages([]);
       });
   }, [activeSession]);
 
@@ -188,7 +168,7 @@ const App: React.FC = () => {
       (document.getElementById("login_modal") as any)?.showModal();
       return;
     }
-    if (input.trim()) {
+    if (input.trim() && !isLoading) {
       setMessages((prev) => [...prev, { sender: "human", text: input }]);
       setUserQuery(input);
       setInput("");
@@ -201,7 +181,7 @@ const App: React.FC = () => {
       const newSession = await createSession(userId);
       setChatSessions((prev) => [newSession, ...prev]);
       setActiveSession(newSession);
-      setMessages([{ sender: "ai", text: "New session started. How can I assist you?" }]);
+      setMessages([]);
     } catch (error) {
       console.error("Error creating session:", error);
     }
@@ -217,8 +197,8 @@ const App: React.FC = () => {
     }
   };
 
-  const handleDeleteSession = async (sessionId: string) => {
-    if (!window.confirm("Delete this session?")) return;
+  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
     try {
       await apiDeleteSession(sessionId);
       setChatSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
@@ -232,64 +212,67 @@ const App: React.FC = () => {
 
   const scrollToBottom = () => {
     if (chatContainerRef.current) {
-      chatContainerRef.current.lastElementChild?.scrollIntoView({
+      chatContainerRef.current.scrollTo({
+        top: chatContainerRef.current.scrollHeight,
         behavior: "smooth",
-        block: "end",
       });
     }
   };
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages, activeSession]);
+  }, [messages, isLoading]);
 
-  const markdownComponents = {
-    a: ({ href, children }: any) => (
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-blue-600 font-semibold underline hover:text-blue-800"
-      >
-        {children}
-      </a>
-    ),
-  };
+  const formatAgentName = (name: string) =>
+    name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
   return (
-    <div className="h-screen flex flex-col overflow-hidden">
+    <div data-theme="agentforge" className="h-screen flex flex-col overflow-hidden bg-base-100">
       <Navbar
         userId={userId}
         isLoggedIn={isLoggedIn}
         handleLogout={handleLogout}
+        onOpenMemories={() => setIsPreferencesOpen(true)}
+        onOpenProfile={() => setIsProfileOpen(true)}
       />
 
       {/* Login Modal */}
-      <dialog id="login_modal" className="modal">
-        <div className="modal-box">
+      <dialog id="login_modal" className="modal modal-bottom sm:modal-middle">
+        <div className="modal-box max-w-sm">
           <form method="dialog">
-            <button className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">
-              X
+            <button className="btn btn-sm btn-circle btn-ghost absolute right-3 top-3">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path d="M18 6L6 18M6 6l12 12" />
+              </svg>
             </button>
           </form>
-          <h3 className="font-bold text-lg">Welcome to ChatAgent</h3>
-          <p className="py-4">Enter a username to start chatting.</p>
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+            </div>
+            <h3 className="font-semibold text-lg">Welcome to Agent Forge</h3>
+          </div>
+          <p className="text-sm text-base-content/60 mb-5">Enter a username to get started.</p>
           <div className="flex gap-2">
             <input
               type="text"
-              className="input input-bordered flex-grow"
-              placeholder="Your username"
+              className="input input-bordered flex-grow text-sm"
+              placeholder="Username"
               value={userId}
               onChange={(e) => setUserId(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") {
+                if (e.key === "Enter" && userId.trim()) {
                   handleLogin();
                   (document.getElementById("login_modal") as any)?.close();
                 }
               }}
             />
             <button
-              className="btn btn-neutral"
+              className="btn btn-primary"
               onClick={() => {
                 handleLogin();
                 (document.getElementById("login_modal") as any)?.close();
@@ -299,289 +282,274 @@ const App: React.FC = () => {
             </button>
           </div>
         </div>
+        <form method="dialog" className="modal-backdrop">
+          <button>close</button>
+        </form>
       </dialog>
 
-      <div className="flex flex-grow overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
         {isLoggedIn && isSidebarOpen && (
-          <div
-            className="bg-base-200 p-4 flex flex-col space-y-2 transition-all duration-300"
-            style={{
-              width: "250px",
-              maxWidth: "250px",
-              minWidth: "250px",
-              overflowY: "auto",
-              scrollbarWidth: "none",
-            }}
-          >
-            <div className="flex justify-between items-center mb-4">
+          <aside className="w-64 shrink-0 bg-sidebar flex flex-col border-r border-sidebar-hover">
+            {/* Sidebar Header */}
+            <div className="p-3 flex items-center gap-2">
               <button
-                className="btn btn-outline btn-sm"
-                onClick={() => setIsSidebarOpen(false)}
+                onClick={createNewSession}
+                className="flex-1 flex items-center justify-center gap-2 text-sm text-sidebar-text bg-sidebar-hover hover:bg-sidebar-active rounded-lg px-3 py-2.5 transition-colors"
               >
-                Close
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                New Chat
               </button>
-              <button className="btn btn-neutral btn-sm" onClick={createNewSession}>
-                + New
+              <button
+                onClick={() => setIsSidebarOpen(false)}
+                className="p-2 text-sidebar-muted hover:text-sidebar-text hover:bg-sidebar-hover rounded-lg transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
+                </svg>
               </button>
             </div>
 
-            <div className="flex-grow">
-              {chatSessions.map((session, index) => (
+            {/* Sessions List */}
+            <div className="flex-1 overflow-y-auto sidebar-scroll px-2 pb-2">
+              <p className="text-[10px] uppercase tracking-wider text-sidebar-muted px-2 mb-2 mt-1">Conversations</p>
+              {chatSessions.length === 0 && (
+                <p className="text-xs text-sidebar-muted px-2">No conversations yet</p>
+              )}
+              {chatSessions.map((session) => (
                 <div
-                  key={index}
-                  className={`p-2 mb-2 rounded hover:bg-gray-400 cursor-pointer flex justify-between items-center ${
+                  key={session.session_id}
+                  onClick={() => setActiveSession(session)}
+                  className={`group flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer mb-0.5 transition-colors ${
                     activeSession?.session_id === session.session_id
-                      ? "bg-base-400 font-semibold"
-                      : "bg-base-300"
-                  } break-words`}
+                      ? "bg-sidebar-active text-sidebar-text"
+                      : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text"
+                  }`}
                 >
-                  <div
-                    onClick={() => setActiveSession(session)}
-                    className="flex-grow truncate"
-                  >
-                    {session.session_title}
-                  </div>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 shrink-0">
+                    <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+                  </svg>
+                  <span className="flex-1 text-sm truncate">{session.session_title}</span>
                   <button
-                    onClick={() => handleDeleteSession(session.session_id)}
-                    className="ml-2 text-red-500 hover:text-red-700 text-sm"
+                    onClick={(e) => handleDeleteSession(e, session.session_id)}
+                    className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-error transition-all"
                   >
-                    x
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                      <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                    </svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Agent Selector at Bottom */}
+            <div className="p-3 border-t border-sidebar-hover">
+              <p className="text-[10px] uppercase tracking-wider text-sidebar-muted px-1 mb-2">Agent</p>
+              <div className="flex flex-col gap-1">
+                {agents.map((agentName) => (
+                  <button
+                    key={agentName}
+                    onClick={() => handleAgentChange(agentName)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+                      selectedAgent === agentName
+                        ? "bg-primary/20 text-primary"
+                        : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-text"
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${
+                      selectedAgent === agentName ? "bg-primary" : "bg-sidebar-muted/40"
+                    }`} />
+                    {formatAgentName(agentName)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+        )}
+
+        {/* Sidebar Toggle (when closed) */}
+        {isLoggedIn && !isSidebarOpen && (
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="fixed left-3 top-[4.5rem] z-50 p-2 bg-base-100 border border-base-300 rounded-lg shadow-sm hover:bg-base-200 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+              <path d="M13 5l7 7-7 7M6 5l7 7-7 7" />
+            </svg>
+          </button>
+        )}
+
+        {/* Main Chat Area */}
+        <main className="flex-1 flex flex-col overflow-hidden bg-base-200/50">
+          {/* Chat Messages */}
+          <div
+            ref={chatContainerRef}
+            className="flex-1 overflow-y-auto scrollbar-thin"
+          >
+            <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
+              {messages.length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full min-h-[50vh] text-center">
+                  <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-7 h-7 text-primary">
+                      <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                      <path d="M2 17l10 5 10-5" />
+                      <path d="M2 12l10 5 10-5" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-semibold mb-2">How can I help you?</h2>
+                  <p className="text-sm text-base-content/50 max-w-md">
+                    I can search the web, look up Wikipedia, do calculations, and more. Ask me anything.
+                  </p>
+                </div>
+              )}
+
+              {messages.map((message, index) => (
+                <ChatBubble
+                  key={index}
+                  sender={message.sender}
+                  text={message.text}
+                  documents={message.documents}
+                />
+              ))}
+
+              {isLoading && <TypingIndicator />}
+            </div>
+          </div>
+
+          {/* Input Area */}
+          <div className="shrink-0 border-t border-base-300 bg-base-100 p-4">
+            <div className="max-w-3xl mx-auto relative">
+              <input
+                type="text"
+                className="w-full bg-base-200 border-0 rounded-xl pl-4 pr-12 py-3.5 text-sm placeholder:text-base-content/40 focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+                placeholder={isLoggedIn ? "Message Agent Forge..." : "Sign in to start chatting..."}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) handleSendMessage();
+                }}
+                disabled={isLoading}
+              />
+              <button
+                className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-colors ${
+                  input.trim() && !isLoading
+                    ? "bg-primary text-primary-content hover:bg-primary/90"
+                    : "text-base-content/20"
+                }`}
+                onClick={handleSendMessage}
+                disabled={!input.trim() || isLoading}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                  <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </main>
+
+        {/* Slide-over Panels */}
+        {/* Backdrop */}
+        {(isPreferencesOpen || isProfileOpen) && (
+          <div
+            className="fixed inset-0 bg-black/20 z-40 transition-opacity"
+            onClick={() => { setIsPreferencesOpen(false); setIsProfileOpen(false); }}
+          />
+        )}
+
+        {/* Memories Panel */}
+        <div className={`fixed top-0 right-0 h-full w-96 max-w-[90vw] bg-base-100 shadow-2xl z-50 transform transition-transform duration-300 ${
+          isPreferencesOpen ? "translate-x-0" : "translate-x-full"
+        }`}>
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between p-5 border-b border-base-300">
+              <div>
+                <h2 className="text-lg font-semibold">Memories</h2>
+                <p className="text-xs text-base-content/50 mt-0.5">Things I remember about you</p>
+              </div>
+              <button
+                className="p-2 hover:bg-base-200 rounded-lg transition-colors"
+                onClick={() => setIsPreferencesOpen(false)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-4 border-b border-base-300">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  className="input input-bordered input-sm flex-grow text-sm"
+                  placeholder="Add a memory..."
+                  value={newPreference}
+                  onChange={(e) => setNewPreference(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleAddPreference(); }}
+                />
+                <button className="btn btn-primary btn-sm" onClick={handleAddPreference}>
+                  Add
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {preferences.length === 0 && (
+                <p className="text-sm text-base-content/40 text-center py-8">No memories stored yet</p>
+              )}
+              {preferences.map((pref, idx) => (
+                <div key={idx} className="flex items-center gap-2 p-3 bg-base-200 rounded-lg group">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-4 h-4 text-primary shrink-0">
+                    <path d="M12 2a5 5 0 015 5v1a5 5 0 01-10 0V7a5 5 0 015-5z" />
+                    <path d="M21 21v-1a7 7 0 00-7-7h-4a7 7 0 00-7 7v1" />
+                  </svg>
+                  <span className="flex-1 text-sm">{pref}</span>
+                  <button
+                    onClick={() => handleDeletePreference(idx)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-base-300 rounded transition-all"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-error">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
                   </button>
                 </div>
               ))}
             </div>
           </div>
-        )}
+        </div>
 
-        {/* Sidebar toggle button */}
-        {isLoggedIn && !isSidebarOpen && (
-          <button
-            className="fixed left-4 z-50 btn btn-outline btn-sm"
-            style={{ top: "5rem" }}
-            onClick={() => setIsSidebarOpen(true)}
-          >
-            Menu
-          </button>
-        )}
-
-        {/* Main Chat Area */}
-        <div className="flex-grow flex flex-col justify-left items-center bg-white-400 p-4 overflow-hidden">
-          {isLoggedIn && (
-            <div className="flex flex-col items-end w-full space-y-2 mb-2">
+        {/* Profile Panel */}
+        <div className={`fixed top-0 right-0 h-full w-96 max-w-[90vw] bg-base-100 shadow-2xl z-50 transform transition-transform duration-300 ${
+          isProfileOpen ? "translate-x-0" : "translate-x-full"
+        }`}>
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between p-5 border-b border-base-300">
+              <div>
+                <h2 className="text-lg font-semibold">Profile</h2>
+                <p className="text-xs text-base-content/50 mt-0.5">Tell me about yourself</p>
+              </div>
               <button
-                className="btn btn-neutral btn-sm w-40"
-                onClick={() => setIsPreferencesOpen(true)}
+                className="p-2 hover:bg-base-200 rounded-lg transition-colors"
+                onClick={() => setIsProfileOpen(false)}
               >
-                Memories
-              </button>
-              <button
-                className="btn btn-neutral btn-sm w-40"
-                onClick={() => setIsProfileOpen(true)}
-              >
-                User Profile
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
               </button>
             </div>
-          )}
-
-          {/* Preferences Panel */}
-          {isLoggedIn && isPreferencesOpen && (
-            <div className="fixed top-0 right-0 h-full w-96 bg-white shadow-lg z-50 p-6 overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">Long-Term Memories</h2>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  onClick={() => setIsPreferencesOpen(false)}
-                >
-                  X
-                </button>
-              </div>
-              <div className="flex mb-4 space-x-2">
-                <input
-                  type="text"
-                  className="input input-bordered flex-grow"
-                  placeholder="Add new memory"
-                  value={newPreference}
-                  onChange={(e) => setNewPreference(e.target.value)}
-                />
-                <button className="btn btn-primary" onClick={handleAddPreference}>
-                  +
-                </button>
-              </div>
-              <ul className="space-y-3">
-                {preferences.map((pref, idx) => (
-                  <li key={idx} className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      className="input input-sm input-bordered flex-grow"
-                      defaultValue={pref}
-                      readOnly
-                    />
-                    <button
-                      className="btn btn-sm btn-error"
-                      onClick={() => handleDeletePreference(idx)}
-                    >
-                      x
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Profile Panel */}
-          {isLoggedIn && isProfileOpen && (
-            <div className="fixed top-0 right-0 h-full w-96 bg-white shadow-lg z-50 p-6 overflow-y-auto">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold">User Profile</h2>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  onClick={() => setIsProfileOpen(false)}
-                >
-                  X
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div className="relative border border-gray-300 rounded-lg p-3 h-32 overflow-y-auto">
-                  <textarea
-                    className="w-full h-full resize-none outline-none"
-                    value={userProfile}
-                    onChange={(e) => setUserProfile(e.target.value)}
-                  />
-                  <div className="absolute top-2 right-2">
-                    <button className="btn btn-sm" onClick={handleUpdateUserProfile}>
-                      Save
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Agent Selector */}
-          <div className="relative w-64 mx-auto mt-8">
-            <button
-              className="w-full bg-base-300 text-gray-800 font-medium px-4 py-2 rounded-lg flex justify-between items-center hover:bg-gray-400"
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            >
-              {selectedAgent.replace(/_/g, " ") || "Select an agent"}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-                className={`w-5 h-5 transition-transform duration-200 ${
-                  isDropdownOpen ? "rotate-180" : ""
-                }`}
+            <div className="flex-1 p-5">
+              <textarea
+                className="w-full h-48 bg-base-200 border-0 rounded-xl p-4 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 transition-shadow"
+                placeholder="Write something about yourself — your role, interests, or preferences..."
+                value={userProfile}
+                onChange={(e) => setUserProfile(e.target.value)}
+              />
+              <button
+                className="btn btn-primary btn-sm mt-3"
+                onClick={handleUpdateUserProfile}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-
-            {isDropdownOpen && (
-              <div className="absolute w-full bg-white border border-gray-300 rounded-lg shadow-lg z-10 max-h-48 overflow-y-auto">
-                {agents.length > 0 ? (
-                  agents.map((agentName) => (
-                    <div
-                      key={agentName}
-                      onClick={() => handleAgentChange(agentName)}
-                      className="px-4 py-2 text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    >
-                      {agentName.replace(/_/g, " ")}
-                    </div>
-                  ))
-                ) : (
-                  <div className="px-4 py-2 text-gray-500">No agents available</div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Chat Messages */}
-          <div
-            className="flex-grow w-full max-w-4xl space-y-4 overflow-y-auto mt-2 px-4"
-            ref={chatContainerRef}
-            style={{
-              maxHeight: "calc(100vh - 100px)",
-              overflowY: "auto",
-              scrollbarWidth: "thin",
-              scrollbarColor: "#c0c0c0 transparent",
-            }}
-          >
-            {messages.map((message, index) => (
-              <div key={index}>
-                {message.sender === "human" ? (
-                  <ChatBubble messages={[message]} />
-                ) : (
-                  <div>
-                    {Array.isArray(message.documents) &&
-                      message.documents.length > 0 && (
-                        <div className="mt-2 mb-2 flex space-x-2 flex-wrap">
-                          {message.documents.slice(0, 3).map((doc: any, docIndex: number) => (
-                            <a
-                              key={docIndex}
-                              href={doc.url || doc.href || "#"}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="card bg-base-100 w-64 shadow-md cursor-pointer hover:shadow-lg transition-shadow mb-2"
-                            >
-                              <div className="card-body p-3">
-                                <h2 className="card-title text-sm font-semibold">
-                                  {doc.name || doc.title || "Source"}
-                                </h2>
-                                {doc.snippet && (
-                                  <p className="text-xs text-gray-500 truncate">
-                                    {doc.snippet}
-                                  </p>
-                                )}
-                              </div>
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    <div className="p-4 rounded-lg bg-base-200">
-                      <ReactMarkdown components={markdownComponents}>
-                        {message.text}
-                      </ReactMarkdown>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Input Area */}
-          <div className="w-full max-w-4xl mt-4 relative">
-            <input
-              type="text"
-              className="input input-bordered w-full pr-10"
-              placeholder="Ask anything..."
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSendMessage();
-              }}
-            />
-            <button
-              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-500 hover:text-gray-700"
-              onClick={handleSendMessage}
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                strokeWidth={2}
-                stroke="currentColor"
-                className="w-6 h-6"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 10.25l16.57-4.76a1 1 0 011.3 1.3l-4.76 16.57a1 1 0 01-1.89.11L11.28 12l-7.68-3.28a1 1 0 01-.6-1.27z"
-                />
-              </svg>
-            </button>
+                Save Profile
+              </button>
+            </div>
           </div>
         </div>
       </div>

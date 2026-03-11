@@ -199,5 +199,5 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
 
     load_dotenv()
-    PORT = int(os.getenv("SERVER_PORT", 7778))
+    PORT = int(os.getenv("SERVER_PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=PORT)
